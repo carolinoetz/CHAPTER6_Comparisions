@@ -1,0 +1,213 @@
+---
+title: "Comparision_Subtypes_v1"
+format: 
+  html:
+    embed-resources: true
+editor: visual
+editor_options: 
+  chunk_output_type: console
+---
+
+# CHAPTER 6: COMPARING SUBTYPE MEMBERSHIP 
+
+```{r}
+library(tidyverse)
+library(readxl)
+library(table1)
+library(here)
+library(FactoMineR)
+library(factoextra)
+library(tidyr)
+library(tidyverse)
+library(nnet)
+library(clusterSEs)
+library(ggplot2)
+library(gridExtra)
+```
+
+## Data 
+
+```{r}
+sleep <- read_csv(here("Sleep_total_data_scaled_probs.csv"))
+act <- read_csv(here("Act_total_data_scaled_probs.csv"))
+ids <- read_excel(here("c3data_31122024.xlsx"))
+pred <- read_csv(here("df_predictors_forcomp.csv"))
+```
+
+## Functions
+
+```{r}
+total_unique_ids <- function(data) {
+  return(length(unique(data$p_id)))
+}
+nrows <- function(data) {
+  return(nrow(data))
+}
+```
+
+# 6.4.2 Describing subtype membership 
+
+```{r}
+# Datasets for act & sleep
+cols_sleep <- c('hmm', 'p_id', 'timepoint')
+cols_act <- c('hmm', 'p_id', 'timepoint')
+cols_pre <- c('p_id', 'timepoint', 'age_all', 'gender_all')
+
+sleep_hmm_only <- sleep[cols_sleep]
+act_hmm_only <- act[cols_act]
+pred_only <- pred[cols_pre]
+
+# Dataset for IDS
+cols <- c('p_id', 'N2', 'N3')  
+ids <- ids[cols]
+
+## Col rename
+ids <- ids %>%
+  rename("6" = 'N2') %>%
+  rename("12" = 'N3') 
+
+freq_table <- table(sleep_hmm_only$hmm)
+print(freq_table)
+```
+
+```{r}
+# Convert ids to long format
+ids <- ids %>%
+  pivot_longer(cols = -p_id,  
+               names_to = "timepoint", 
+               values_to = "C")   
+
+sleep_hmm_only <- sleep_hmm_only %>%
+  rename("sleep_hmm" = 'hmm') %>%
+  filter(timepoint %in% c("6", "12"))
+
+act_hmm_only <- act_hmm_only %>%
+  rename("act_hmm" = 'hmm') %>%
+  filter(timepoint %in% c( "6", "12"))
+
+freq_table <- table(ids$C)
+print(freq_table)
+```
+
+```{r}
+ids$timepoint <- as.numeric(ids$timepoint)
+
+sleep_act_hmm <- merge(sleep_hmm_only, 
+                       act_hmm_only, 
+                       by = c("p_id", "timepoint"),  all = TRUE)
+
+ids_sleep_act <- merge(sleep_act_hmm, 
+                       ids, 
+                       by = c("p_id", "timepoint"),  all = TRUE)
+
+#Value rename
+ids_sleep_act <- ids_sleep_act %>%
+  mutate(sleep_hmm = case_when(
+    sleep_hmm == "1" ~ "EffEar_Sl", 
+    sleep_hmm == "2" ~ "EffLate_Sl", 
+    sleep_hmm == "3" ~ "Disrup_Sl", 
+    sleep_hmm == "4" ~ "Var_late_Sl")) %>%
+  mutate(act_hmm = case_when(
+    act_hmm == "1" ~ "High_act", 
+    act_hmm == "2" ~ "Light_act", 
+    act_hmm == "3" ~ "Low_act")) %>%
+  mutate(C = case_when(
+    C == "1" ~ "Se_ApDec", 
+    C == "2" ~ "Se_ApInc",
+    C == "3" ~ "Moderate", 
+    C == "4" ~ "Low"))
+```
+
+```{r}
+ids_sleep_act <- merge(ids_sleep_act, 
+                       pred_only, 
+                       by = c("p_id", "timepoint"),  all.x = TRUE)
+```
+
+```{r}
+#Drop all rows that have NA
+ids_sleep_act <- na.omit(ids_sleep_act)
+print(total_unique_ids(ids_sleep_act))
+print(nrows(ids_sleep_act))
+```
+
+### Contingency tables
+
+```{r}
+# Contingency table 
+contingency_table <- table(ids_sleep_act$sleep_hmm, ids_sleep_act$act_hmm, ids_sleep_act$C)
+
+# Contingency table: Sleep vs Act
+table_sl_act <- margin.table(contingency_table, c(1, 2))
+print(table_sl_act)
+
+# Contingency table: Sleep vs IDS
+table_sl_ids <- margin.table(contingency_table, c(1, 3))
+print(table_sl_ids)
+
+# Contingency table: Act vs IDS
+table_act_ids <- margin.table(contingency_table, c(2, 3))
+print(table_act_ids)
+```
+
+# 6.4.6 Change in IDS subtype over time and associated changes in sleep & activity
+
+From symptomatic to non-symptomatic IDS-subtypes
+
+```{r}
+trans_ids_sleep_act <- ids_sleep_act %>%
+  mutate(binary_sympt = case_when(
+    C == "Low" ~ "non_sympt", 
+    C != "Low" ~ "sympt"))
+
+cols_trans <- c('p_id', 'timepoint', 'age_all', 'gender_all', "sleep_hmm", "act_hmm", "binary_sympt")
+trans_ids_sleep_act <- trans_ids_sleep_act[cols_trans]
+
+print(total_unique_ids(trans_ids_sleep_act))
+
+wide_trans_ids_sleep_act <- trans_ids_sleep_act %>%
+  pivot_wider(
+    names_from = timepoint, 
+    values_from = c(binary_sympt, sleep_hmm, act_hmm)
+  )
+
+print(total_unique_ids(wide_trans_ids_sleep_act))
+print(nrows(wide_trans_ids_sleep_act))
+```
+
+```{r}
+wide_trans_ids_sleep_act <- wide_trans_ids_sleep_act %>%
+  mutate(
+    Change = case_when(
+      # Stayed Same
+      binary_sympt_6 == binary_sympt_12 ~ "Stayed Same",
+      
+      # Worsen
+      binary_sympt_6 == "non_sympt" & binary_sympt_12 == "sympt" ~ "Worsen",
+
+      # Improve
+      binary_sympt_6 == "sympt" & binary_sympt_12 == "non_sympt" ~ "Improve",
+
+      # Both NA
+      is.na(binary_sympt_6) & is.na(binary_sympt_12) ~ "NA for both",
+      
+      # Only 6m NA
+      is.na(binary_sympt_6) & !is.na(binary_sympt_12) ~ "NA_6m",
+      
+      # Only 12m NA
+      !is.na(binary_sympt_6) & is.na(binary_sympt_12) ~ "NA_12m",
+      
+      # Unexpected cases
+      TRUE ~ "Other"
+    )
+  ) 
+```
+
+```{r}
+# Calculate frequency of "change"
+freq_table <- table(wide_trans_ids_sleep_act$Change)
+print(freq_table)
+
+print(total_unique_ids(wide_trans_ids_sleep_act))
+print(nrows(wide_trans_ids_sleep_act))
+```
