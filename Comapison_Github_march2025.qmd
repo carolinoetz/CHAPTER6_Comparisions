@@ -13,16 +13,7 @@ editor_options:
 ```{r}
 library(tidyverse)
 library(readxl)
-library(table1)
 library(here)
-library(FactoMineR)
-library(factoextra)
-library(tidyr)
-library(tidyverse)
-library(nnet)
-library(clusterSEs)
-library(ggplot2)
-library(gridExtra)
 ```
 
 ## Data 
