@@ -1,0 +1,29 @@
+use "ready_for_stata.dta", clear
+
+foreach var in act_hmm gender_all {
+  rename `var' `var'_string
+  encode `var'_string, gen(`var')
+}
+
+// Model 1 - sleep vs act - ref cat = "EffEar_Sl"
+
+mlogit sleep_hmm i.act_hmm gender_all age_all, vce(cluster p_id) rrr base(1)
+estimates store m1
+
+margins i.act_hmm
+
+// Model 2 - ids vs act - ref cat = "Low"
+mlogit C i.act_hmm gender_all age_all, vce(cluster p_id) rrr
+estimates store m2
+
+margins i.act_hmm
+
+// Model 3 - ids vs sleep - ref cat = "Low"
+mlogit C i.sleep_hmm gender_all age_all, vce(cluster p_id) rrr
+estimates store m3
+
+margins i.sleep_hmm
+
+esttab m1 m2 m3, cells(b(fmt(3)) ci(fmt(3) par) p(fmt(3) par)) eform
+log close
+ 
